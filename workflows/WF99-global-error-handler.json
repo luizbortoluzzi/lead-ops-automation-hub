@@ -7,7 +7,10 @@
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [200, 400]
+      "position": [
+        200,
+        400
+      ]
     },
     {
       "parameters": {
@@ -18,7 +21,10 @@
       "name": "Extract Error Context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [420, 400]
+      "position": [
+        420,
+        400
+      ]
     },
     {
       "parameters": {
@@ -29,7 +35,10 @@
       "name": "Classify And Sanitize",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [640, 400]
+      "position": [
+        640,
+        400
+      ]
     },
     {
       "parameters": {
@@ -39,27 +48,53 @@
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "X-Correlation-Id", "value": "={{ $json.correlationId }}" }]
+          "parameters": [
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $json.correlationId }}"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { correlationId: $json.correlationId, workflowName: $json.workflowName ?? 'unknown', executionId: $json.executionId, nodeName: $json.nodeName, operation: $json.operation, errorType: $json.errorType, errorCode: $json.errorCode, statusCode: $json.statusCode, retryable: $json.retryable, attempt: $json.attempt ?? 1, message: $json.message, payload: $json.payload } }}",
-        "options": { "response": { "response": { "neverError": true } } }
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "wf99-persist",
       "name": "Persist Failure",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [860, 400],
+      "position": [
+        860,
+        400
+      ],
       "notes": "Select 'LeadOps Backend API' Header Auth."
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "combinator": "and",
           "conditions": [
-            { "id": "alert", "leftValue": "={{ ['AUTHENTICATION','AUTHORIZATION','INTERNAL','DEPENDENCY_UNAVAILABLE','RATE_LIMIT','TIMEOUT'].includes($json.errorType) }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+            {
+              "id": "alert",
+              "leftValue": "={{ ['AUTHENTICATION','AUTHORIZATION','INTERNAL','DEPENDENCY_UNAVAILABLE','RATE_LIMIT','TIMEOUT'].includes($json.errorType) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
           ]
         },
         "options": {}
@@ -68,7 +103,10 @@
       "name": "Should Alert?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1080, 400]
+      "position": [
+        1080,
+        400
+      ]
     },
     {
       "parameters": {
@@ -83,20 +121,77 @@
       "name": "Send Email (Mailpit)",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [1300, 320],
+      "position": [
+        1300,
+        320
+      ],
       "notes": "Select 'Mailpit SMTP' credential. Alert only on definitive failures."
     }
   ],
   "connections": {
-    "Error Trigger": { "main": [[{ "node": "Extract Error Context", "type": "main", "index": 0 }]] },
-    "Extract Error Context": { "main": [[{ "node": "Classify And Sanitize", "type": "main", "index": 0 }]] },
-    "Classify And Sanitize": { "main": [[{ "node": "Persist Failure", "type": "main", "index": 0 }]] },
-    "Persist Failure": { "main": [[{ "node": "Should Alert?", "type": "main", "index": 0 }]] },
-    "Should Alert?": { "main": [[{ "node": "Send Email (Mailpit)", "type": "main", "index": 0 }], []] }
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Error Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Error Context": {
+      "main": [
+        [
+          {
+            "node": "Classify And Sanitize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify And Sanitize": {
+      "main": [
+        [
+          {
+            "node": "Persist Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Failure": {
+      "main": [
+        [
+          {
+            "node": "Should Alert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Alert?": {
+      "main": [
+        [
+          {
+            "node": "Send Email (Mailpit)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "pinData": {},
   "meta": {},
-  "tags": []
+  "tags": [],
+  "id": "wf99"
 }

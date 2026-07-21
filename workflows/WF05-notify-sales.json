@@ -7,7 +7,10 @@
       "name": "When Executed by Another Workflow",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [220, 300]
+      "position": [
+        220,
+        300
+      ]
     },
     {
       "parameters": {
@@ -18,7 +21,10 @@
       "name": "Build Email Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [
+        460,
+        300
+      ]
     },
     {
       "parameters": {
@@ -33,15 +39,28 @@
       "name": "Send Email (Mailpit)",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [700, 300],
+      "position": [
+        700,
+        300
+      ],
       "notes": "Select the 'Mailpit SMTP' credential (host mailpit, port 1025, no TLS/auth) after import."
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "a1", "name": "notified", "value": true, "type": "boolean" },
-            { "id": "a2", "name": "correlationId", "value": "={{ $json.correlationId }}", "type": "string" }
+            {
+              "id": "a1",
+              "name": "notified",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "a2",
+              "name": "correlationId",
+              "value": "={{ $json.correlationId }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
@@ -50,23 +69,54 @@
       "name": "Return Result",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [940, 300]
+      "position": [
+        940,
+        300
+      ]
     }
   ],
   "connections": {
     "When Executed by Another Workflow": {
-      "main": [[{ "node": "Build Email Data", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Email Data": {
-      "main": [[{ "node": "Send Email (Mailpit)", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Email (Mailpit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Send Email (Mailpit)": {
-      "main": [[{ "node": "Return Result", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "wf99"
+  },
   "pinData": {},
   "meta": {},
-  "tags": []
+  "tags": [],
+  "id": "wf05"
 }

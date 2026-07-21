@@ -25,6 +25,7 @@ BACKEND_PORT      ?= 3000
 BACKEND_API_KEY   ?= change-me-development-key
 N8N_PORT          ?= 5678
 MAILPIT_WEB_PORT  ?= 8025
+MAILPIT_SMTP_PORT ?= 1025
 FRONTEND_PORT     ?= 5173
 
 API      := http://localhost:$(BACKEND_PORT)
@@ -34,6 +35,7 @@ PSQL     := $(COMPOSE) exec -T postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_D
 .PHONY: help env up down clean restart ps logs logs-backend wait demo urls \
         install build typecheck lint format test test-int check \
         fe-install fe-build fe-lint fe-dev \
+        n8n-import wf-smoke \
         migrate psql health validate
 
 help: ## Show this help
@@ -119,6 +121,18 @@ fe-dev: ## Run the Vite dev server (proxies /api to the backend host port)
 
 migrate: ## Run TypeORM migrations against the running database
 	cd $(BACKEND_DIR) && DATABASE_URL="$(DB_URL)" npm run migration:run
+
+# --- n8n workflows ---------------------------------------------------------
+
+n8n-import: ## Import workflows/*.json into the running n8n (stable ids + WF99 error workflow)
+	$(COMPOSE) exec -T n8n sh -lc 'rm -rf /tmp/wf && mkdir -p /tmp/wf'
+	$(COMPOSE) cp workflows/. n8n:/tmp/wf/
+	$(COMPOSE) exec -T n8n n8n import:workflow --separate --input=/tmp/wf
+	@echo "Imported. Remaining manual step (GUI): create the 'LeadOps Backend API' (Header Auth) and 'Mailpit SMTP' credentials and select them in the HTTP/Email nodes."
+
+wf-smoke: ## Smoke-test WF06/WF01/WF07 behaviors against the backend (replay/conflict/retry/reprocess)
+	BASE=$(API) KEY='$(BACKEND_API_KEY)' MAILPIT=http://localhost:$(MAILPIT_WEB_PORT) \
+	  SMTP_HOST=localhost SMTP_PORT=$(MAILPIT_SMTP_PORT) node scripts/wf-smoke-test.mjs
 
 psql: ## Open a psql shell in the postgres container
 	$(COMPOSE) exec postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)

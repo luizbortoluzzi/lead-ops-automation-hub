@@ -7,7 +7,10 @@
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [200, 400],
+      "position": [
+        200,
+        400
+      ],
       "notes": "Or replace with an admin Webhook. Input: { failureId }."
     },
     {
@@ -16,23 +19,52 @@
         "url": "=http://backend:3000/api/v1/automation-failures/{{ $json.failureId }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "options": { "response": { "response": { "neverError": true, "fullResponse": true } } }
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
       },
       "id": "wf07-load",
       "name": "Load Failure",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [420, 400],
+      "position": [
+        420,
+        400
+      ],
       "notes": "Header Auth 'LeadOps Backend API'."
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "combinator": "and",
           "conditions": [
-            { "id": "op", "leftValue": "={{ $json.body.data.operation }}", "rightValue": "SEND_ENTERPRISE_NOTIFICATION", "operator": { "type": "string", "operation": "equals" } },
-            { "id": "st", "leftValue": "={{ $json.body.data.status }}", "rightValue": "OPEN", "operator": { "type": "string", "operation": "equals" } }
+            {
+              "id": "op",
+              "leftValue": "={{ $json.body.data.operation }}",
+              "rightValue": "SEND_ENTERPRISE_NOTIFICATION",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "st",
+              "leftValue": "={{ $json.body.data.status }}",
+              "rightValue": "OPEN",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
           ]
         },
         "options": {}
@@ -41,7 +73,10 @@
       "name": "Reprocessable?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [660, 400]
+      "position": [
+        660,
+        400
+      ]
     },
     {
       "parameters": {
@@ -55,7 +90,10 @@
       "name": "Mark Reprocessing",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 320]
+      "position": [
+        900,
+        320
+      ]
     },
     {
       "parameters": {
@@ -69,20 +107,31 @@
       "name": "Load Lead",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 320],
+      "position": [
+        1120,
+        320
+      ],
       "notes": "NO upsert is executed during reprocessing — only a GET."
     },
     {
       "parameters": {
         "source": "database",
-        "workflowId": "REPLACE_WITH_WF05_ID",
+        "workflowId": {
+          "__rl": true,
+          "value": "wf05",
+          "mode": "list",
+          "cachedResultName": "WF05 — Notify Sales"
+        },
         "options": {}
       },
       "id": "wf07-notify",
       "name": "Notify Sales",
       "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1,
-      "position": [1340, 320],
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        320
+      ],
       "notes": "Select WF05 — Notify Sales. Sends the e-mail only."
     },
     {
@@ -100,14 +149,27 @@
       "name": "Resolve Failure",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 320]
+      "position": [
+        1560,
+        320
+      ]
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "e1", "name": "error", "value": "not-reprocessable", "type": "string" },
-            { "id": "e2", "name": "statusCode", "value": 409, "type": "number" }
+            {
+              "id": "e1",
+              "name": "error",
+              "value": "not-reprocessable",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "statusCode",
+              "value": 409,
+              "type": "number"
+            }
           ]
         },
         "options": {}
@@ -116,25 +178,94 @@
       "name": "Not Reprocessable (409)",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [900, 500]
+      "position": [
+        900,
+        500
+      ]
     }
   ],
   "connections": {
-    "Manual Trigger": { "main": [[{ "node": "Load Failure", "type": "main", "index": 0 }]] },
-    "Load Failure": { "main": [[{ "node": "Reprocessable?", "type": "main", "index": 0 }]] },
-    "Reprocessable?": {
+    "Manual Trigger": {
       "main": [
-        [{ "node": "Mark Reprocessing", "type": "main", "index": 0 }],
-        [{ "node": "Not Reprocessable (409)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Mark Reprocessing": { "main": [[{ "node": "Load Lead", "type": "main", "index": 0 }]] },
-    "Load Lead": { "main": [[{ "node": "Notify Sales", "type": "main", "index": 0 }]] },
-    "Notify Sales": { "main": [[{ "node": "Resolve Failure", "type": "main", "index": 0 }]] }
+    "Load Failure": {
+      "main": [
+        [
+          {
+            "node": "Reprocessable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprocessable?": {
+      "main": [
+        [
+          {
+            "node": "Mark Reprocessing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Not Reprocessable (409)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Reprocessing": {
+      "main": [
+        [
+          {
+            "node": "Load Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Lead": {
+      "main": [
+        [
+          {
+            "node": "Notify Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Sales": {
+      "main": [
+        [
+          {
+            "node": "Resolve Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "wf99"
+  },
   "pinData": {},
   "meta": {},
-  "tags": []
+  "tags": [],
+  "id": "wf07"
 }

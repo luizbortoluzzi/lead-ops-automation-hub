@@ -7,7 +7,10 @@
       "name": "When Executed by Another Workflow",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [200, 400]
+      "position": [
+        200,
+        400
+      ]
     },
     {
       "parameters": {
@@ -18,8 +21,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "X-Correlation-Id", "value": "={{ $json.correlationId }}" },
-            { "name": "Idempotency-Key", "value": "={{ $json.idempotencyKey }}" }
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $json.correlationId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.idempotencyKey }}"
+            }
           ]
         },
         "sendBody": true,
@@ -27,14 +36,22 @@
         "jsonBody": "={{ $json.request.body }}",
         "options": {
           "timeout": 5000,
-          "response": { "response": { "fullResponse": true, "neverError": true } }
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
         }
       },
       "id": "wf06-call",
       "name": "Call Backend",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 400],
+      "position": [
+        440,
+        400
+      ],
       "notes": "Select 'LeadOps Backend API' Header Auth. Timeout = N8N_BACKEND_REQUEST_TIMEOUT_MS."
     },
     {
@@ -46,15 +63,30 @@
       "name": "Classify Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 400]
+      "position": [
+        680,
+        400
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "combinator": "and",
           "conditions": [
-            { "id": "ok", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
           ]
         },
         "options": {}
@@ -63,17 +95,45 @@
       "name": "Success?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [900, 400]
+      "position": [
+        900,
+        400
+      ]
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "s1", "name": "success", "value": true, "type": "boolean" },
-            { "id": "s2", "name": "statusCode", "value": "={{ $json.statusCode }}", "type": "number" },
-            { "id": "s3", "name": "operation", "value": "={{ $json.statusCode === 201 ? 'created' : 'updated' }}", "type": "string" },
-            { "id": "s4", "name": "lead", "value": "={{ $json.body.data }}", "type": "object" },
-            { "id": "s5", "name": "correlationId", "value": "={{ $json.correlationId }}", "type": "string" }
+            {
+              "id": "s1",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "s2",
+              "name": "statusCode",
+              "value": "={{ $json.statusCode }}",
+              "type": "number"
+            },
+            {
+              "id": "s3",
+              "name": "operation",
+              "value": "={{ $json.statusCode === 201 ? 'created' : 'updated' }}",
+              "type": "string"
+            },
+            {
+              "id": "s4",
+              "name": "lead",
+              "value": "={{ $json.body.data }}",
+              "type": "object"
+            },
+            {
+              "id": "s5",
+              "name": "correlationId",
+              "value": "={{ $json.correlationId }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
@@ -82,15 +142,30 @@
       "name": "Return Success",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1140, 300]
+      "position": [
+        1140,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "combinator": "and",
           "conditions": [
-            { "id": "r1", "leftValue": "={{ $json.retryable && $json.attempt < 4 }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+            {
+              "id": "r1",
+              "leftValue": "={{ $json.retryable && $json.attempt < 4 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
           ]
         },
         "options": {}
@@ -99,7 +174,10 @@
       "name": "Retryable AND attempt < 4?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1140, 500]
+      "position": [
+        1140,
+        500
+      ]
     },
     {
       "parameters": {
@@ -110,13 +188,23 @@
       "name": "Backoff",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [1360, 560],
+      "position": [
+        1360,
+        560
+      ],
       "webhookId": "wf06-backoff"
     },
     {
       "parameters": {
         "assignments": {
-          "assignments": [{ "id": "a1", "name": "attempt", "value": "={{ $json.attempt + 1 }}", "type": "number" }]
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "attempt",
+              "value": "={{ $json.attempt + 1 }}",
+              "type": "number"
+            }
+          ]
         },
         "options": {}
       },
@@ -124,18 +212,46 @@
       "name": "Increment Attempt",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1560, 560],
+      "position": [
+        1560,
+        560
+      ],
       "notes": "Loops back into 'Call Backend' — max 4 attempts, no infinite loop."
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "f1", "name": "success", "value": false, "type": "boolean" },
-            { "id": "f2", "name": "statusCode", "value": "={{ $json.statusCode }}", "type": "number" },
-            { "id": "f3", "name": "errorCode", "value": "={{ $json.errorCode }}", "type": "string" },
-            { "id": "f4", "name": "attempt", "value": "={{ $json.attempt }}", "type": "number" },
-            { "id": "f5", "name": "correlationId", "value": "={{ $json.correlationId }}", "type": "string" }
+            {
+              "id": "f1",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "f2",
+              "name": "statusCode",
+              "value": "={{ $json.statusCode }}",
+              "type": "number"
+            },
+            {
+              "id": "f3",
+              "name": "errorCode",
+              "value": "={{ $json.errorCode }}",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "attempt",
+              "value": "={{ $json.attempt }}",
+              "type": "number"
+            },
+            {
+              "id": "f5",
+              "name": "correlationId",
+              "value": "={{ $json.correlationId }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
@@ -144,31 +260,112 @@
       "name": "Return Failure",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1360, 440]
+      "position": [
+        1360,
+        440
+      ]
     }
   ],
   "connections": {
-    "When Executed by Another Workflow": { "main": [[{ "node": "Call Backend", "type": "main", "index": 0 }]] },
-    "Call Backend": { "main": [[{ "node": "Classify Result", "type": "main", "index": 0 }]] },
-    "Classify Result": { "main": [[{ "node": "Success?", "type": "main", "index": 0 }]] },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Call Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Backend": {
+      "main": [
+        [
+          {
+            "node": "Classify Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Result": {
+      "main": [
+        [
+          {
+            "node": "Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Success?": {
       "main": [
-        [{ "node": "Return Success", "type": "main", "index": 0 }],
-        [{ "node": "Retryable AND attempt < 4?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Return Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retryable AND attempt < 4?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Retryable AND attempt < 4?": {
       "main": [
-        [{ "node": "Backoff", "type": "main", "index": 0 }],
-        [{ "node": "Return Failure", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Backoff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Backoff": { "main": [[{ "node": "Increment Attempt", "type": "main", "index": 0 }]] },
-    "Increment Attempt": { "main": [[{ "node": "Call Backend", "type": "main", "index": 0 }]] }
+    "Backoff": {
+      "main": [
+        [
+          {
+            "node": "Increment Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Attempt": {
+      "main": [
+        [
+          {
+            "node": "Call Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "wf99"
+  },
   "pinData": {},
   "meta": {},
-  "tags": []
+  "tags": [],
+  "id": "wf06"
 }

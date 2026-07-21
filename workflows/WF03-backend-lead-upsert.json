@@ -1,4 +1,5 @@
 {
+  "id": "wf03",
   "name": "WF03 — Backend Lead Upsert",
   "nodes": [
     {
@@ -7,52 +8,101 @@
       "name": "When Executed by Another Workflow",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [240, 300]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "http://backend:3000/api/v1/leads/upsert",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [{ "name": "X-Correlation-Id", "value": "={{ $json.correlationId }}" }]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { externalId: $json.lead.externalId, name: $json.lead.name, email: $json.lead.email, phone: $json.lead.phone, company: $json.lead.company, employees: $json.lead.employees, source: $json.lead.source } }}",
-        "options": { "response": { "response": { "fullResponse": true, "neverError": true } } }
-      },
-      "id": "wf03-http",
-      "name": "POST Upsert",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [500, 300],
-      "notes": "Select the 'LeadOps Backend API' Header Auth credential after import."
+      "position": [
+        220,
+        300
+      ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// WF03 Map Upsert Result — Run Once for Each Item\nconst res = $json;\nconst status = res.statusCode;\nconst body = res.body ?? {};\nconst correlationId = $node['POST Upsert'].json.headers?.['x-correlation-id'];\nconst success = status === 200 || status === 201;\nreturn { json: { success, statusCode: status, operation: status === 201 ? 'created' : status === 200 ? 'updated' : 'none', lead: success ? body.data : null, error: success ? null : (body.error ?? { code: 'UNKNOWN' }), correlationId } };"
+        "jsCode": "// WF03 Build Retry Request — Run Once for Each Item\n// Wrap the lead into the generic request contract WF06 understands.\nreturn { json: {\n  request: {\n    operation: 'LEAD_UPSERT',\n    method: 'POST',\n    path: '/api/v1/leads/upsert',\n    body: $json.lead,\n  },\n  correlationId: $json.correlationId,\n  idempotencyKey: $json.idempotencyKey,\n  attempt: 1,\n} };"
       },
-      "id": "wf03-map",
-      "name": "Map Upsert Result",
+      "id": "wf03-build",
+      "name": "Build Retry Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [760, 300]
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "wf06",
+          "mode": "list",
+          "cachedResultName": "WF06 — Backend Request With Retry"
+        },
+        "options": {}
+      },
+      "id": "wf03-call-retry",
+      "name": "Backend Request With Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        700,
+        300
+      ],
+      "notes": "Retry policy lives in WF06 — do not duplicate it here."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF03 Map Result — Run Once for Each Item\nconst r = $json;\nreturn { json: {\n  success: r.success === true,\n  statusCode: r.statusCode ?? null,\n  operation: r.operation ?? 'none',\n  lead: r.lead ?? null,\n  errorCode: r.errorCode ?? null,\n  correlationId: r.correlationId ?? null,\n} };"
+      },
+      "id": "wf03-map",
+      "name": "Map Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        300
+      ]
     }
   ],
   "connections": {
     "When Executed by Another Workflow": {
-      "main": [[{ "node": "POST Upsert", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Retry Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "POST Upsert": {
-      "main": [[{ "node": "Map Upsert Result", "type": "main", "index": 0 }]]
+    "Build Retry Request": {
+      "main": [
+        [
+          {
+            "node": "Backend Request With Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend Request With Retry": {
+      "main": [
+        [
+          {
+            "node": "Map Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "wf99"
+  },
   "pinData": {},
   "meta": {},
   "tags": []

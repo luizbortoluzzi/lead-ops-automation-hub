@@ -32,6 +32,22 @@ notification can be reprocessed without re-running the upsert.
   applies the retry policy, classifies failures, and records definitive failures.
   n8n never decides on its own that the primary operation completed.
 
+## 3.1 Importing the pre-wired workflows
+
+The `workflows/*.json` in this repo are **already cross-wired**: each has a stable
+id (`wf01`…`wf99`), every Execute Workflow node references the right sub-workflow
+by that id, and every workflow has WF99 set as its **Error Workflow**. Import them
+all at once:
+
+```bash
+make n8n-import      # docker compose exec n8n n8n import:workflow --separate --input=…
+```
+
+After import, the graph and error-workflow associations are in place. The **only**
+remaining manual step is **credentials** (below) — they cannot be imported safely
+(they'd carry secrets), so you create them in the UI and select them in the HTTP
+Request / Send Email nodes. Then activate WF01 to use the Production URL.
+
 ## 4. Credentials
 
 Reuse the Phase 2 credentials: `LeadOps Backend API` (Header Auth, `X-API-Key`)

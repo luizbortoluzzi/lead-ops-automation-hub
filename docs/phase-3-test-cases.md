@@ -18,6 +18,20 @@ Run the automated suite (unit + integration incl. concurrency & simulation):
 make test-int
 ```
 
+### Workflow-logic smoke test
+
+`scripts/wf-smoke-test.mjs` emulates the **WF06/WF01/WF07 logic** (identical
+headers, classification and backoff) against the running backend — proving
+replay, conflict (no retry), retry-with-backoff (4 attempts, same correlation id,
+definitive failure persisted + sanitized) and reprocessing (no upsert, e-mail to
+Mailpit, failure resolved, no duplicate lead). It is a harness that mirrors the
+workflow code paths — it does **not** execute n8n itself.
+
+```bash
+make n8n-import      # import the pre-wired workflows into n8n (stable ids + WF99 error workflow)
+make wf-smoke        # run the 17-check behavior harness (needs the stack up)
+```
+
 Manual cURL smoke tests:
 
 | # | Case | Command / expectation |

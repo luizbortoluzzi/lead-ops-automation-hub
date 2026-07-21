@@ -1,4 +1,5 @@
 {
+  "id": "wf01",
   "name": "WF01 — Lead Intake",
   "nodes": [
     {
@@ -12,15 +13,34 @@
       "name": "Receive Lead",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [200, 400],
+      "position": [
+        -40,
+        420
+      ],
       "webhookId": "leadops-lead-intake"
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "b1", "name": "body", "value": "={{ $json.body }}", "type": "object" },
-            { "id": "b2", "name": "incomingCorrelationId", "value": "={{ $json.headers['x-correlation-id'] }}", "type": "string" }
+            {
+              "id": "b1",
+              "name": "body",
+              "value": "={{ $json.body }}",
+              "type": "object"
+            },
+            {
+              "id": "b2",
+              "name": "incomingCorrelationId",
+              "value": "={{ $json.headers['x-correlation-id'] }}",
+              "type": "string"
+            },
+            {
+              "id": "b3",
+              "name": "idempotencyKey",
+              "value": "={{ $json.headers['idempotency-key'] }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
@@ -29,82 +49,273 @@
       "name": "Extract Request",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [420, 400]
+      "position": [
+        180,
+        420
+      ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// WF01 Ensure Correlation ID — Run Once for Each Item\nfunction uuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {\n    const r = (Math.random() * 16) | 0;\n    const v = c === 'x' ? r : (r & 0x3) | 0x8;\n    return v.toString(16);\n  });\n}\nconst incoming = $json.incomingCorrelationId;\nconst correlationId = typeof incoming === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(incoming) ? incoming : uuid();\nreturn { json: { correlationId, lead: $json.body } };"
+        "jsCode": "// WF01 Ensure Correlation ID — Run Once for Each Item\nfunction uuid() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = (Math.random()*16)|0; const v = c==='x'?r:(r&0x3)|0x8; return v.toString(16); }); }\nconst incoming = $json.incomingCorrelationId;\nconst correlationId = typeof incoming === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(incoming) ? incoming : uuid();\nreturn { json: { correlationId, idempotencyKey: $json.idempotencyKey, lead: $json.body } };"
       },
       "id": "wf01-cid",
       "name": "Ensure Correlation ID",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [640, 400]
+      "position": [
+        400,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF01 Validate Idempotency Key — Run Once for Each Item\n// Never generate a random key — respond 400 when missing/invalid.\nconst key = $json.idempotencyKey;\nconst valid = typeof key === 'string' && key.trim() !== '' && key.trim().length <= 255 && !/[\\u0000-\\u001F\\u007F]/.test(key);\nreturn { json: { ...$json, idempotencyKey: valid ? key.trim() : null, idempotencyValid: valid } };"
+      },
+      "id": "wf01-validate-key",
+      "name": "Validate Idempotency Key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "k",
+              "leftValue": "={{ $json.idempotencyValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-if-key",
+      "name": "Idempotency Key Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        840,
+        420
+      ]
     },
     {
       "parameters": {
         "source": "database",
-        "workflowId": "REPLACE_WITH_WF02_ID",
+        "workflowId": {
+          "__rl": true,
+          "value": "wf02",
+          "mode": "list",
+          "cachedResultName": "WF02 — Normalize Lead"
+        },
         "options": {}
       },
       "id": "wf01-normalize",
       "name": "Normalize Lead",
       "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1,
-      "position": [860, 400],
-      "notes": "Select WF02 — Normalize Lead. Input: { correlationId, lead }."
+      "typeVersion": 1.2,
+      "position": [
+        1060,
+        340
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "combinator": "and",
           "conditions": [
-            { "id": "c1", "leftValue": "={{ $json.isValid }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+            {
+              "id": "v",
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
           ]
         },
         "options": {}
       },
-      "id": "wf01-if",
+      "id": "wf01-if-valid",
       "name": "Basic Input Valid?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1080, 400]
+      "position": [
+        1280,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "u1",
+              "name": "correlationId",
+              "value": "={{ $json.correlationId }}",
+              "type": "string"
+            },
+            {
+              "id": "u2",
+              "name": "lead",
+              "value": "={{ $json.lead }}",
+              "type": "object"
+            },
+            {
+              "id": "u3",
+              "name": "idempotencyKey",
+              "value": "={{ $node['Validate Idempotency Key'].json.idempotencyKey }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-prep-upsert",
+      "name": "Prepare Upsert Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1500,
+        280
+      ]
     },
     {
       "parameters": {
         "source": "database",
-        "workflowId": "REPLACE_WITH_WF03_ID",
+        "workflowId": {
+          "__rl": true,
+          "value": "wf03",
+          "mode": "list",
+          "cachedResultName": "WF03 — Backend Lead Upsert"
+        },
         "options": {}
       },
       "id": "wf01-upsert",
       "name": "Backend Lead Upsert",
       "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1,
-      "position": [1320, 320],
-      "notes": "Select WF03 — Backend Lead Upsert. Input: { correlationId, lead }."
+      "typeVersion": 1.2,
+      "position": [
+        1720,
+        280
+      ]
     },
     {
       "parameters": {
         "source": "database",
-        "workflowId": "REPLACE_WITH_WF04_ID",
+        "workflowId": {
+          "__rl": true,
+          "value": "wf04",
+          "mode": "list",
+          "cachedResultName": "WF04 — Register Lead Activity"
+        },
+        "workflowInputs": {
+          "value": {
+            "correlationId": "={{ $json.correlationId }}",
+            "leadId": "={{ $json.lead.id }}",
+            "type": "AUTOMATION_PROCESSED",
+            "description": "Lead processed by n8n",
+            "metadata": {}
+          },
+          "mappingMode": "defineBelow",
+          "matchingColumns": []
+        },
         "options": {}
       },
       "id": "wf01-act-processed",
       "name": "Register Processed Activity",
       "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1,
-      "position": [1540, 320],
-      "notes": "Select WF04. Input: { correlationId, leadId, type: 'AUTOMATION_PROCESSED', description, metadata }."
+      "typeVersion": 1.2,
+      "position": [
+        1940,
+        280
+      ]
     },
     {
       "parameters": {
         "rules": {
           "values": [
-            { "conditions": { "options": { "caseSensitive": true, "version": 2 }, "combinator": "and", "conditions": [ { "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}", "rightValue": "small", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "small" },
-            { "conditions": { "options": { "caseSensitive": true, "version": 2 }, "combinator": "and", "conditions": [ { "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}", "rightValue": "medium", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "medium" },
-            { "conditions": { "options": { "caseSensitive": true, "version": 2 }, "combinator": "and", "conditions": [ { "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}", "rightValue": "enterprise", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "enterprise" }
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}",
+                    "rightValue": "small",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "small"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}",
+                    "rightValue": "medium",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "medium"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}",
+                    "rightValue": "enterprise",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "outputKey": "enterprise"
+            }
           ]
         },
         "options": {}
@@ -113,46 +324,149 @@
       "name": "Lead Segment",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [1760, 320]
+      "position": [
+        2160,
+        280
+      ]
     },
     {
       "parameters": {
         "source": "database",
-        "workflowId": "REPLACE_WITH_WF05_ID",
+        "workflowId": {
+          "__rl": true,
+          "value": "wf05",
+          "mode": "list",
+          "cachedResultName": "WF05 — Notify Sales"
+        },
+        "workflowInputs": {
+          "value": {
+            "correlationId": "={{ $node['Backend Lead Upsert'].json.correlationId }}",
+            "lead": "={{ $node['Backend Lead Upsert'].json.lead }}"
+          },
+          "mappingMode": "defineBelow",
+          "matchingColumns": []
+        },
         "options": {}
       },
       "id": "wf01-notify",
       "name": "Notify Sales",
       "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1,
-      "position": [2000, 200],
-      "notes": "Select WF05. Input: { correlationId, lead } (from Backend Lead Upsert)."
+      "typeVersion": 1.2,
+      "position": [
+        2400,
+        160
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "onError = continue (error output) → a notification failure routes to 'Persist Notification Failure', NOT to a lead rollback."
     },
     {
       "parameters": {
         "source": "database",
-        "workflowId": "REPLACE_WITH_WF04_ID",
+        "workflowId": {
+          "__rl": true,
+          "value": "wf04",
+          "mode": "list",
+          "cachedResultName": "WF04 — Register Lead Activity"
+        },
+        "workflowInputs": {
+          "value": {
+            "correlationId": "={{ $node['Backend Lead Upsert'].json.correlationId }}",
+            "leadId": "={{ $node['Backend Lead Upsert'].json.lead.id }}",
+            "type": "ENTERPRISE_NOTIFICATION_SENT",
+            "description": "Enterprise lead notified via Mailpit",
+            "metadata": {}
+          },
+          "mappingMode": "defineBelow",
+          "matchingColumns": []
+        },
         "options": {}
       },
       "id": "wf01-act-notified",
       "name": "Register Notification Activity",
       "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1,
-      "position": [2220, 200],
-      "notes": "Select WF04. type: 'ENTERPRISE_NOTIFICATION_SENT'."
+      "typeVersion": 1.2,
+      "position": [
+        2620,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:3000/api/v1/automation-failures",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-Id",
+              "value": "={{ $node['Backend Lead Upsert'].json.correlationId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { correlationId: $node['Backend Lead Upsert'].json.correlationId, workflowName: 'WF01 — Lead Intake', nodeName: 'Notify Sales', operation: 'SEND_ENTERPRISE_NOTIFICATION', errorType: 'DEPENDENCY_UNAVAILABLE', retryable: true, attempt: 1, message: 'Enterprise notification failed', payload: { leadId: $node['Backend Lead Upsert'].json.lead.id } } }}",
+        "options": {}
+      },
+      "id": "wf01-persist-notif-fail",
+      "name": "Persist Notification Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2620,
+        260
+      ],
+      "notes": "Select 'LeadOps Backend API' Header Auth."
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseCode": "={{ $node['Backend Lead Upsert'].json.statusCode }}",
-        "responseBody": "={{ { data: $node['Backend Lead Upsert'].json.lead, meta: { operation: $node['Backend Lead Upsert'].json.operation }, correlationId: $node['Backend Lead Upsert'].json.correlationId } }}",
+        "responseBody": "={{ { data: $node['Backend Lead Upsert'].json.lead, meta: { operation: $node['Backend Lead Upsert'].json.operation, idempotencyReplayed: false, notification: { status: 'sent' } } } }}",
         "options": {}
       },
       "id": "wf01-respond-ok",
       "name": "Respond — Success",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2460, 300]
+      "position": [
+        2840,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{ $node['Backend Lead Upsert'].json.statusCode }}",
+        "responseBody": "={{ { data: $node['Backend Lead Upsert'].json.lead, meta: { operation: $node['Backend Lead Upsert'].json.operation, idempotencyReplayed: false, notification: { status: 'failed', failureId: $json.data ? $json.data.id : null } } } }}",
+        "options": {}
+      },
+      "id": "wf01-respond-ok-notiffail",
+      "name": "Respond — Success (Notify Failed)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2840,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={{ { error: { code: 'IDEMPOTENCY_KEY_REQUIRED', message: 'Idempotency-Key header is required', details: [] } } }}",
+        "options": {}
+      },
+      "id": "wf01-respond-idem",
+      "name": "Respond — Idempotency Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        560
+      ]
     },
     {
       "parameters": {
@@ -165,34 +479,208 @@
       "name": "Respond — Validation Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1320, 560]
+      "position": [
+        1500,
+        480
+      ]
     }
   ],
   "connections": {
-    "Receive Lead": { "main": [[{ "node": "Extract Request", "type": "main", "index": 0 }]] },
-    "Extract Request": { "main": [[{ "node": "Ensure Correlation ID", "type": "main", "index": 0 }]] },
-    "Ensure Correlation ID": { "main": [[{ "node": "Normalize Lead", "type": "main", "index": 0 }]] },
-    "Normalize Lead": { "main": [[{ "node": "Basic Input Valid?", "type": "main", "index": 0 }]] },
+    "Receive Lead": {
+      "main": [
+        [
+          {
+            "node": "Extract Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Request": {
+      "main": [
+        [
+          {
+            "node": "Ensure Correlation ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Correlation ID": {
+      "main": [
+        [
+          {
+            "node": "Validate Idempotency Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Idempotency Key": {
+      "main": [
+        [
+          {
+            "node": "Idempotency Key Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Idempotency Key Valid?": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Idempotency Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Basic Input Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Basic Input Valid?": {
       "main": [
-        [{ "node": "Backend Lead Upsert", "type": "main", "index": 0 }],
-        [{ "node": "Respond — Validation Error", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Prepare Upsert Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Backend Lead Upsert": { "main": [[{ "node": "Register Processed Activity", "type": "main", "index": 0 }]] },
-    "Register Processed Activity": { "main": [[{ "node": "Lead Segment", "type": "main", "index": 0 }]] },
+    "Prepare Upsert Input": {
+      "main": [
+        [
+          {
+            "node": "Backend Lead Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend Lead Upsert": {
+      "main": [
+        [
+          {
+            "node": "Register Processed Activity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Register Processed Activity": {
+      "main": [
+        [
+          {
+            "node": "Lead Segment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Lead Segment": {
       "main": [
-        [{ "node": "Respond — Success", "type": "main", "index": 0 }],
-        [{ "node": "Respond — Success", "type": "main", "index": 0 }],
-        [{ "node": "Notify Sales", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond — Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond — Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Notify Sales": { "main": [[{ "node": "Register Notification Activity", "type": "main", "index": 0 }]] },
-    "Register Notification Activity": { "main": [[{ "node": "Respond — Success", "type": "main", "index": 0 }]] }
+    "Notify Sales": {
+      "main": [
+        [
+          {
+            "node": "Register Notification Activity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Persist Notification Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Register Notification Activity": {
+      "main": [
+        [
+          {
+            "node": "Respond — Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Notification Failure": {
+      "main": [
+        [
+          {
+            "node": "Respond — Success (Notify Failed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "wf99"
+  },
   "pinData": {},
   "meta": {},
   "tags": []

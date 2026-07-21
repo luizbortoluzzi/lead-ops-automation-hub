@@ -7,7 +7,10 @@
       "name": "When Executed by Another Workflow",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1,
-      "position": [260, 300]
+      "position": [
+        260,
+        300
+      ]
     },
     {
       "parameters": {
@@ -18,17 +21,32 @@
       "name": "Normalize And Validate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [520, 300]
+      "position": [
+        520,
+        300
+      ]
     }
   ],
   "connections": {
     "When Executed by Another Workflow": {
-      "main": [[{ "node": "Normalize And Validate", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Normalize And Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "wf99"
+  },
   "pinData": {},
   "meta": {},
-  "tags": []
+  "tags": [],
+  "id": "wf02"
 }
