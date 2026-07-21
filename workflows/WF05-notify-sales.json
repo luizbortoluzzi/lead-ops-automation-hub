@@ -1,0 +1,72 @@
+{
+  "name": "WF05 — Notify Sales",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf05-trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF05 Build Email Data — Run Once for Each Item\nconst { lead, correlationId } = $json;\nconst subject = `[LeadOps] Novo lead enterprise: ${lead.name}`;\nconst text = [\n  `Nome: ${lead.name}`,\n  `E-mail: ${lead.email}`,\n  `Empresa: ${lead.company ?? '-'}`,\n  `Funcionarios: ${lead.employees}`,\n  `Score: ${lead.score}`,\n  `Segmento: ${lead.segment}`,\n  `Correlation ID: ${correlationId ?? '-'}`,\n].join('\\n');\nreturn { json: { subject, text, to: 'sales@example.local' } };"
+      },
+      "id": "wf05-build",
+      "name": "Build Email Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "leadops@example.local",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "wf05-send",
+      "name": "Send Email (Mailpit)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [700, 300],
+      "notes": "Select the 'Mailpit SMTP' credential (host mailpit, port 1025, no TLS/auth) after import."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "notified", "value": true, "type": "boolean" },
+            { "id": "a2", "name": "correlationId", "value": "={{ $json.correlationId }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf05-return",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [940, 300]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Build Email Data", "type": "main", "index": 0 }]]
+    },
+    "Build Email Data": {
+      "main": [[{ "node": "Send Email (Mailpit)", "type": "main", "index": 0 }]]
+    },
+    "Send Email (Mailpit)": {
+      "main": [[{ "node": "Return Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

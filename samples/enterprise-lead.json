@@ -1,0 +1,9 @@
+{
+  "externalId": "referral-999",
+  "name": "João Enterprise",
+  "email": "joao@bigcorp.com",
+  "phone": "5511911112222",
+  "company": "BigCorp SA",
+  "employees": 220,
+  "source": "referral"
+}

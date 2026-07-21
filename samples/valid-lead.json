@@ -4,8 +4,6 @@
   "email": "maria@example.com",
   "phone": "5511999998888",
   "company": "Acme Ltda",
-  "employees": 85,
-  "source": "landing-page",
-  "score": 65,
-  "segment": "medium"
+  "employees": 40,
+  "source": "landing-page"
 }

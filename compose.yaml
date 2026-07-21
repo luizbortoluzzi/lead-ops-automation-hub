@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# LeadOps Automation Hub — Phase 1 local stack.
+# LeadOps Automation Hub — Phase 2 local stack.
 # Bring everything up with: docker compose up --build -d
 # ---------------------------------------------------------------------------
 
@@ -34,7 +34,16 @@ services:
     environment:
       NODE_ENV: production
       BACKEND_PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${POSTGRES_DB}
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      BACKEND_API_KEY: ${BACKEND_API_KEY}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: ${SMTP_FROM:-leadops@example.local}
+      SALES_NOTIFICATION_EMAIL: ${SALES_NOTIFICATION_EMAIL:-sales@example.local}
       TZ: ${TZ}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
@@ -42,7 +51,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      # Node 24 ships fetch; exit non-zero unless /health returns 2xx.
+      # Node ships fetch; exit non-zero unless /health returns 2xx.
       test:
         [
           "CMD",
@@ -54,6 +63,17 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
 
   n8n:
     image: n8nio/n8n:latest
@@ -71,7 +91,26 @@ services:
       - "${N8N_PORT:-5678}:5678"
     volumes:
       - n8n_data:/home/node/.n8n
+    depends_on:
+      backend:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+      # Local dev: no auth, accept any sender/recipient.
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025" # SMTP
+      - "${MAILPIT_WEB_PORT:-8025}:8025" # Web UI
+    volumes:
+      - mailpit_data:/data
 
 volumes:
   postgres_data:
   n8n_data:
+  mailpit_data:

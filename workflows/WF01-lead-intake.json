@@ -1,0 +1,199 @@
+{
+  "name": "WF01 — Lead Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf01-webhook",
+      "name": "Receive Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 400],
+      "webhookId": "leadops-lead-intake"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "b1", "name": "body", "value": "={{ $json.body }}", "type": "object" },
+            { "id": "b2", "name": "incomingCorrelationId", "value": "={{ $json.headers['x-correlation-id'] }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-extract",
+      "name": "Extract Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [420, 400]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF01 Ensure Correlation ID — Run Once for Each Item\nfunction uuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {\n    const r = (Math.random() * 16) | 0;\n    const v = c === 'x' ? r : (r & 0x3) | 0x8;\n    return v.toString(16);\n  });\n}\nconst incoming = $json.incomingCorrelationId;\nconst correlationId = typeof incoming === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(incoming) ? incoming : uuid();\nreturn { json: { correlationId, lead: $json.body } };"
+      },
+      "id": "wf01-cid",
+      "name": "Ensure Correlation ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": "REPLACE_WITH_WF02_ID",
+        "options": {}
+      },
+      "id": "wf01-normalize",
+      "name": "Normalize Lead",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [860, 400],
+      "notes": "Select WF02 — Normalize Lead. Input: { correlationId, lead }."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.isValid }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-if",
+      "name": "Basic Input Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1080, 400]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": "REPLACE_WITH_WF03_ID",
+        "options": {}
+      },
+      "id": "wf01-upsert",
+      "name": "Backend Lead Upsert",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1320, 320],
+      "notes": "Select WF03 — Backend Lead Upsert. Input: { correlationId, lead }."
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": "REPLACE_WITH_WF04_ID",
+        "options": {}
+      },
+      "id": "wf01-act-processed",
+      "name": "Register Processed Activity",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1540, 320],
+      "notes": "Select WF04. Input: { correlationId, leadId, type: 'AUTOMATION_PROCESSED', description, metadata }."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "conditions": { "options": { "caseSensitive": true, "version": 2 }, "combinator": "and", "conditions": [ { "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}", "rightValue": "small", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "small" },
+            { "conditions": { "options": { "caseSensitive": true, "version": 2 }, "combinator": "and", "conditions": [ { "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}", "rightValue": "medium", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "medium" },
+            { "conditions": { "options": { "caseSensitive": true, "version": 2 }, "combinator": "and", "conditions": [ { "leftValue": "={{ $node['Backend Lead Upsert'].json.lead.segment }}", "rightValue": "enterprise", "operator": { "type": "string", "operation": "equals" } } ] }, "outputKey": "enterprise" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-switch",
+      "name": "Lead Segment",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1760, 320]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": "REPLACE_WITH_WF05_ID",
+        "options": {}
+      },
+      "id": "wf01-notify",
+      "name": "Notify Sales",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2000, 200],
+      "notes": "Select WF05. Input: { correlationId, lead } (from Backend Lead Upsert)."
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": "REPLACE_WITH_WF04_ID",
+        "options": {}
+      },
+      "id": "wf01-act-notified",
+      "name": "Register Notification Activity",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [2220, 200],
+      "notes": "Select WF04. type: 'ENTERPRISE_NOTIFICATION_SENT'."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{ $node['Backend Lead Upsert'].json.statusCode }}",
+        "responseBody": "={{ { data: $node['Backend Lead Upsert'].json.lead, meta: { operation: $node['Backend Lead Upsert'].json.operation }, correlationId: $node['Backend Lead Upsert'].json.correlationId } }}",
+        "options": {}
+      },
+      "id": "wf01-respond-ok",
+      "name": "Respond — Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={{ { error: { code: 'VALIDATION_ERROR', message: 'Invalid lead payload', details: $json.errors } } }}",
+        "options": {}
+      },
+      "id": "wf01-respond-400",
+      "name": "Respond — Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1320, 560]
+    }
+  ],
+  "connections": {
+    "Receive Lead": { "main": [[{ "node": "Extract Request", "type": "main", "index": 0 }]] },
+    "Extract Request": { "main": [[{ "node": "Ensure Correlation ID", "type": "main", "index": 0 }]] },
+    "Ensure Correlation ID": { "main": [[{ "node": "Normalize Lead", "type": "main", "index": 0 }]] },
+    "Normalize Lead": { "main": [[{ "node": "Basic Input Valid?", "type": "main", "index": 0 }]] },
+    "Basic Input Valid?": {
+      "main": [
+        [{ "node": "Backend Lead Upsert", "type": "main", "index": 0 }],
+        [{ "node": "Respond — Validation Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Backend Lead Upsert": { "main": [[{ "node": "Register Processed Activity", "type": "main", "index": 0 }]] },
+    "Register Processed Activity": { "main": [[{ "node": "Lead Segment", "type": "main", "index": 0 }]] },
+    "Lead Segment": {
+      "main": [
+        [{ "node": "Respond — Success", "type": "main", "index": 0 }],
+        [{ "node": "Respond — Success", "type": "main", "index": 0 }],
+        [{ "node": "Notify Sales", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify Sales": { "main": [[{ "node": "Register Notification Activity", "type": "main", "index": 0 }]] },
+    "Register Notification Activity": { "main": [[{ "node": "Respond — Success", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

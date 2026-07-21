@@ -1,0 +1,34 @@
+{
+  "name": "WF02 — Normalize Lead",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf02-trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF02 Normalize And Validate — Run Once for Each Item\nconst input = $json;\nconst raw = input.lead ?? {};\nconst str = (v) => (v === undefined || v === null ? undefined : String(v).trim());\nconst digits = (v) => (v === undefined || v === null ? undefined : String(v).replace(/\\D/g, ''));\nconst num = (v) => {\n  if (v === undefined || v === null || v === '') return undefined;\n  const n = Number(v);\n  return Number.isFinite(n) ? Math.trunc(n) : undefined;\n};\nconst lead = {\n  externalId: str(raw.externalId) || undefined,\n  name: str(raw.name),\n  email: str(raw.email)?.toLowerCase(),\n  phone: digits(raw.phone) || undefined,\n  company: str(raw.company) || undefined,\n  employees: num(raw.employees) ?? 0,\n  source: str(raw.source)?.toLowerCase() || undefined,\n};\nconst errors = [];\nif (!lead.name) errors.push({ path: 'name', message: 'name is required' });\nif (!lead.email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(lead.email)) errors.push({ path: 'email', message: 'a valid email is required' });\nif (lead.employees < 0) errors.push({ path: 'employees', message: 'employees must be >= 0' });\nreturn { json: { isValid: errors.length === 0, errors, correlationId: input.correlationId, lead } };"
+      },
+      "id": "wf02-normalize",
+      "name": "Normalize And Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Normalize And Validate", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

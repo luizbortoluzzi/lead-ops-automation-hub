@@ -1,0 +1,59 @@
+{
+  "name": "WF03 — Backend Lead Upsert",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf03-trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:3000/api/v1/leads/upsert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Correlation-Id", "value": "={{ $json.correlationId }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { externalId: $json.lead.externalId, name: $json.lead.name, email: $json.lead.email, phone: $json.lead.phone, company: $json.lead.company, employees: $json.lead.employees, source: $json.lead.source } }}",
+        "options": { "response": { "response": { "fullResponse": true, "neverError": true } } }
+      },
+      "id": "wf03-http",
+      "name": "POST Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300],
+      "notes": "Select the 'LeadOps Backend API' Header Auth credential after import."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF03 Map Upsert Result — Run Once for Each Item\nconst res = $json;\nconst status = res.statusCode;\nconst body = res.body ?? {};\nconst correlationId = $node['POST Upsert'].json.headers?.['x-correlation-id'];\nconst success = status === 200 || status === 201;\nreturn { json: { success, statusCode: status, operation: status === 201 ? 'created' : status === 200 ? 'updated' : 'none', lead: success ? body.data : null, error: success ? null : (body.error ?? { code: 'UNKNOWN' }), correlationId } };"
+      },
+      "id": "wf03-map",
+      "name": "Map Upsert Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 300]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "POST Upsert", "type": "main", "index": 0 }]]
+    },
+    "POST Upsert": {
+      "main": [[{ "node": "Map Upsert Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

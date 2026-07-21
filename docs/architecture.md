@@ -1,132 +1,173 @@
-# Architecture — Phase 1 (MVP)
+# Architecture — Phase 2
 
 ## Purpose
 
-LeadOps Automation Hub ingests inbound leads (from landing pages, CSV imports,
-referrals, etc.), scores and segments them, and persists them into a CRM-like
-store. Phase 1 delivers the **local infrastructure** and the **Backend API**;
-the orchestration itself is built manually in n8n following
-[phase-1-n8n-guide.md](phase-1-n8n-guide.md).
+LeadOps Automation Hub ingests inbound leads, qualifies them with deterministic
+rules, persists them, and notifies sales about high-value (enterprise) leads.
+Phase 2 turns the single service into a **modular integration**: n8n orchestrates
+sub-workflows, the backend owns all business rules, and services authenticate to
+each other with an API key while a correlation id makes each run traceable.
 
 ## Request flow
 
 ```text
-HTTP client
-    │  POST /webhook/lead  (raw lead JSON)
-    ▼
-n8n Webhook
-    │
-    ▼
-Normalization (Code / Edit Fields)  ── trim, lowercase e-mail, coerce types
-    │
-    ▼
-Validation (Code)                   ── required fields, e-mail shape
-    │
-    ├── invalid ─▶ Respond to Webhook (HTTP 400)
-    │
-    ▼ valid
-Scoring (Code)                      ── deterministic score from firmographics
-    │
-    ▼
-Segmentation (Switch)               ── small / medium / enterprise
-    │
-    ▼
-HTTP Request ─▶ Backend API
-                    │  POST /api/leads
-                    ▼
-                Zod validation ─▶ 400 on bad body
-                    │
-                    ▼
-                PostgreSQL (INSERT) ─▶ 409 on duplicate e-mail
-                    │
-                    ▼
-                201 Created + lead JSON
-    │
-    ▼
-Respond to Webhook (HTTP 201)
+Client
+  │  POST /webhook/lead
+  ▼
+n8n · WF01 Lead Intake
+  │  extract headers/body → ensure correlation id
+  ▼
+WF02 Normalize Lead (sub-workflow)      basic normalization + cheap validation
+  │
+  ├── invalid ─▶ Respond 400
+  ▼ valid
+WF03 Backend Lead Upsert (sub-workflow)
+  │   POST http://backend:3000/api/v1/leads/upsert   (X-API-Key, X-Correlation-Id)
+  │        ▼
+  │     Backend: validate DTO → normalize → recompute score+segment
+  │        → upsert in a transaction → 201 created / 200 updated
+  ▼
+WF04 Register Lead Activity (AUTOMATION_PROCESSED)
+  │   POST /api/v1/leads/:id/activities
+  ▼
+Switch — segment
+  ├── small / medium ─▶ Respond (no alert)
+  └── enterprise
+        ▼
+      WF05 Notify Sales ─▶ Mailpit SMTP (mailpit:1025)
+        ▼
+      WF04 Register Lead Activity (ENTERPRISE_NOTIFICATION_SENT)
+        ▼
+      Respond 201/200
 ```
 
-## Components
+## Responsibility split
 
-| Component      | Responsibility                                                        | Tech                              |
-| -------------- | --------------------------------------------------------------------- | --------------------------------- |
-| **n8n**        | Orchestration: webhook, normalization, validation, scoring, routing   | n8n (Docker), built by hand       |
-| **Backend**   | Validate + persist leads, expose read endpoints                       | NestJS 11 + Fastify 5, Zod, TypeORM |
-| **PostgreSQL** | Durable lead storage with constraints and indexes                     | PostgreSQL 16                     |
+| Concern                         | n8n | Backend |
+| ------------------------------- | :-: | :-----: |
+| Receive external events         |  ✔  |         |
+| Extract headers/body            |  ✔  |         |
+| Initial normalization           |  ✔  |         |
+| Cheap "don't bother" validation |  ✔  |         |
+| Orchestration / routing         |  ✔  |         |
+| Sub-workflows                   |  ✔  |         |
+| Send notifications (SMTP)       |  ✔  |         |
+| **Definitive DTO validation**   |     |    ✔    |
+| **Defensive normalization**     |     |    ✔    |
+| **Business rules**              |     |    ✔    |
+| **Score & segment (final)**     |     |    ✔    |
+| **Persistence / uniqueness**    |     |    ✔    |
+| **Transactions**                |     |    ✔    |
+| **AuthN / AuthZ**               |     |    ✔    |
+| **Audit / activities**          |     |    ✔    |
+| **Standardized errors**         |     |    ✔    |
 
-Where the work lives: n8n owns **scoring and segmentation** (business rules that
-change often); the Backend owns **validation and persistence** (data integrity
-that must always hold, regardless of caller). The Backend therefore re-validates
-everything with Zod and re-normalizes the e-mail — it never trusts its caller.
+The backend is the **source of truth**. n8n may transform and pre-validate to
+avoid pointless calls, but the backend re-validates everything and never trusts
+inbound `score`/`segment`.
+
+## Why score/segment live in the backend
+
+- **Determinism & consistency**: one implementation
+  ([lead-scoring.service.ts](../backend/src/modules/leads/services/lead-scoring.service.ts)),
+  unit-tested, applied identically no matter which caller (n8n, cURL, a future
+  CSV importer) creates the lead.
+- **Trust boundary**: a client could send any `score`; accepting it would let
+  callers self-promote to `enterprise`. The DTO strips those fields and the
+  backend recomputes.
+- **Change safety**: scoring rules change often; keeping them in one tested
+  service (not scattered across n8n Code nodes) makes changes safe and reviewable.
+
+## Why sub-workflows
+
+- **Reuse**: `WF03` (upsert) and `WF04` (activity) are called from multiple
+  points; `WF02`/`WF05` isolate normalization and notification.
+- **Testability & clarity**: each sub-workflow has a small, documented
+  input/output contract and can be run in isolation.
+- **Separation of concerns**: WF01 orchestrates; the others each do one job.
+
+## Authentication between services
+
+API key over `X-API-Key`, enforced by a global NestJS guard, `/health` public.
+Full details: [api-authentication.md](api-authentication.md).
+
+## Correlation ID
+
+Received or generated per request, added to every log line, returned on the
+response header, and stored on lead activities. Full details:
+[correlation-id.md](correlation-id.md).
+
+## Activity log
+
+`lead_activities` is an append-only audit trail (one lead → many activities).
+Initial types: `AUTOMATION_PROCESSED`, `ENTERPRISE_NOTIFICATION_SENT`,
+`AUTOMATION_NOTIFICATION_FAILED` (enforced by a CHECK constraint). Each row keeps
+`metadata` (JSONB) and `correlation_id`.
 
 ## Backend internal design
 
-NestJS on the Fastify adapter. Modules are thin and single-purpose:
+NestJS on the Fastify adapter, TypeORM, Zod for DTOs.
 
 ```text
 src/
-├── app.ts                 # createApp(): builds the app, wires global filter + shutdown hooks
-├── server.ts              # bootstrap(): validates config, listens on 0.0.0.0
-├── app.module.ts          # root module
-├── config/                # Zod-validated environment (fail fast at startup)
-├── database/              # TypeORM DataSource config + migrations (run on startup)
-├── schemas/               # Zod schemas (create body, list query) — the source of truth for shapes
-├── leads/                 # controller (HTTP) + service (TypeORM repository) + entity ↔ DTO mapping
-├── health/                # DB-aware health check
-└── errors/                # AppError hierarchy + all-exceptions filter + Zod pipe
+├── app.ts / server.ts        # createApp() + bootstrap (kept from Phase 1 for app.inject() tests)
+├── app.module.ts             # wires global guard + logging interceptor + correlation middleware
+├── common/
+│   ├── auth/                 # ApiKeyGuard, @Public(), constants
+│   ├── correlation/          # middleware, @CorrelationId() decorator, sanitizer
+│   ├── errors/               # AppError hierarchy + codes
+│   ├── filters/              # all-exceptions filter (stable envelope)
+│   ├── interceptors/         # request logging
+│   ├── pipes/                # Zod validation pipe
+│   └── validation/           # UUID helper
+├── config/                   # Zod-validated env (fail fast)
+├── database/                 # TypeORM DataSource + migrations (run on startup)
+└── modules/
+    ├── health/               # public DB-aware health check
+    └── leads/
+        ├── controllers/      # leads.controller, lead-activities.controller
+        ├── dto/              # Zod schemas (upsert, activity, list)
+        ├── entities/         # Lead, LeadActivity
+        ├── enums/            # segment, activity type (+ DB CHECK mirror)
+        ├── services/         # leads.service (upsert/tx), lead-scoring, lead-activities
+        └── types/            # response DTOs + mappers
 ```
 
 ### Key decisions
 
-- **NestJS on Fastify**, not Express: lighter runtime, and `app.inject()` gives
-  fast in-process HTTP tests without opening a socket.
-- **Zod, not class-validator**: one schema validates the HTTP body *and* infers
-  the TypeScript type, and the same schemas are unit-tested in isolation.
-- **TypeORM with migrations**: a `Lead` entity maps the table; the schema is
-  owned by a TypeORM migration that runs on startup (`migrationsRun`), never by
-  `synchronize`. Queries use the repository API / query builder with bound
-  parameters — values are never concatenated into SQL.
-- **Centralized errors**: a single `@Catch()` filter maps a small `AppError`
-  hierarchy to a stable response envelope. Technical details (stack traces, SQL,
-  the driver error) are logged server-side only.
-- **Case-insensitive e-mail uniqueness** enforced by a functional `UNIQUE INDEX`
-  on `lower(email)` — the database is the final arbiter, so concurrent inserts
-  can't race past an application-level check.
-- **Config validated at startup**: an invalid/missing env var stops the process
-  immediately with a readable message instead of failing on first request.
-- **Graceful shutdown**: `enableShutdownHooks()` lets TypeORM close its
-  connection pool on SIGTERM/SIGINT.
+- **NestJS on Fastify** for `app.inject()` in-process tests.
+- **Zod** as DTO validation + type inference (one schema validates and types).
+- **TypeORM with migrations** (`synchronize: false`, `migrationsRun: true`).
+- **Upsert identity**: externalId (partial unique index) preferred, else
+  case-insensitive e-mail; the lookup + write run in one transaction; a payload
+  whose externalId and e-mail point at two different leads → `LEAD_IDENTITY_CONFLICT`.
+- **Global API-key guard** + `@Public()`; **correlation middleware**; **request
+  logging interceptor** — all cross-cutting concerns live in `common/`.
+- **Fail-fast config** and **graceful shutdown** (TypeORM pool closed on
+  SIGTERM/SIGINT via `enableShutdownHooks`).
 
 ## Error model
 
-All errors share one envelope:
+One envelope for every error:
 
 ```json
-{ "error": { "code": "VALIDATION_ERROR", "message": "Invalid request body", "details": [] } }
+{ "error": { "code": "VALIDATION_ERROR", "message": "…", "details": [] } }
 ```
 
-| Code                  | HTTP | Raised when                                  |
-| --------------------- | ---- | -------------------------------------------- |
-| `VALIDATION_ERROR`    | 400  | Body/query fails Zod validation              |
-| `INVALID_UUID`        | 400  | `:id` path param is not a UUID               |
-| `LEAD_NOT_FOUND`      | 404  | Lead lookup returns nothing                  |
-| `LEAD_ALREADY_EXISTS` | 409  | Duplicate e-mail (unique-violation `23505`)  |
-| `DATABASE_ERROR`      | 500  | Unexpected database failure                  |
-| `INTERNAL_ERROR`      | 500  | Any other unhandled error                    |
+| Code                     | HTTP | Raised when                                   |
+| ------------------------ | ---- | --------------------------------------------- |
+| `VALIDATION_ERROR`       | 400  | Body/query fails Zod validation               |
+| `INVALID_UUID`           | 400  | Path param is not a UUID                       |
+| `UNAUTHORIZED`           | 401  | Missing/invalid API key                        |
+| `LEAD_NOT_FOUND`         | 404  | Lead lookup returns nothing                    |
+| `LEAD_ALREADY_EXISTS`    | 409  | Unique violation (`23505`)                     |
+| `LEAD_IDENTITY_CONFLICT` | 409  | externalId and e-mail point at different leads |
+| `DATABASE_ERROR`         | 500  | Unexpected database failure                    |
+| `INTERNAL_ERROR`         | 500  | Any other unhandled error                      |
 
-## Data model
+## Phase 2 limitations
 
-Single table `leads` (created by the TypeORM migration
-[1721520000000-InitialSchema.ts](../backend/src/database/migrations/1721520000000-InitialSchema.ts)):
-UUID primary key, `name`/`email` required, `employees`/`score` non-negative
-(CHECK), `segment` constrained to `small | medium | enterprise`, `TIMESTAMPTZ`
-timestamps (`created_at`/`updated_at` managed by TypeORM's
-`@CreateDateColumn`/`@UpdateDateColumn`), a functional unique index on
-`lower(email)`, and indexes on `created_at DESC`, `segment`, and `external_id`.
-
-## Not in Phase 1
-
-Idempotency keys, retry/backoff, a global n8n error workflow, CSV import,
-scheduled sync, reporting, API-key auth, and AI enrichment are all deferred.
-See the README's "Próximas fases".
-```
+Not implemented (later phases): idempotency keys, automatic retry, backoff, a
+global n8n error workflow / dead-letter queue, CSV import, scheduled sync, daily
+reports, and AI enrichment. The segment Switch notifies only `enterprise`; the
+notification is best-effort (no retry). The API key is a single shared secret.

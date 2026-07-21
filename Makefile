@@ -14,6 +14,7 @@ SHELL := bash
 
 COMPOSE       := docker compose
 BACKEND_DIR   := backend
+FRONTEND_DIR  := frontend
 BACKEND_CTR   := leadops-backend-1
 
 POSTGRES_USER     ?= leadops
@@ -21,13 +22,18 @@ POSTGRES_PASSWORD ?= change-me
 POSTGRES_DB       ?= leadops
 POSTGRES_PORT     ?= 5432
 BACKEND_PORT      ?= 3000
+BACKEND_API_KEY   ?= change-me-development-key
+N8N_PORT          ?= 5678
+MAILPIT_WEB_PORT  ?= 8025
+FRONTEND_PORT     ?= 5173
 
 API      := http://localhost:$(BACKEND_PORT)
 DB_URL   := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)
 PSQL     := $(COMPOSE) exec -T postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
-.PHONY: help env up down clean restart ps logs logs-backend wait demo \
+.PHONY: help env up down clean restart ps logs logs-backend wait demo urls \
         install build typecheck lint format test test-int check \
+        fe-install fe-build fe-lint fe-dev \
         migrate psql health validate
 
 help: ## Show this help
@@ -95,6 +101,20 @@ test-int: ## Unit + integration tests (needs Postgres running)
 
 check: typecheck lint test ## typecheck + lint + unit tests (CI-like gate)
 
+# --- Frontend (React + Vite + Tailwind, in frontend/) ----------------------
+
+fe-install: ## Install frontend dependencies
+	cd $(FRONTEND_DIR) && npm install
+
+fe-build: ## Typecheck + build the frontend
+	cd $(FRONTEND_DIR) && npm run build
+
+fe-lint: ## Lint the frontend
+	cd $(FRONTEND_DIR) && npm run lint
+
+fe-dev: ## Run the Vite dev server (proxies /api to the backend host port)
+	cd $(FRONTEND_DIR) && VITE_DEV_PROXY=$(API) npm run dev
+
 # --- Database --------------------------------------------------------------
 
 migrate: ## Run TypeORM migrations against the running database
@@ -106,26 +126,36 @@ psql: ## Open a psql shell in the postgres container
 health: ## Curl the health endpoint
 	@curl -s $(API)/health; echo
 
+urls: ## Print the local service URLs
+	@echo "  frontend   http://localhost:$(FRONTEND_PORT)   (dashboard UI)"
+	@echo "  backend    $(API)"
+	@echo "  n8n        http://localhost:$(N8N_PORT)"
+	@echo "  mailpit    http://localhost:$(MAILPIT_WEB_PORT)"
+
 # --- End-to-end validation of the running stack ----------------------------
 
-validate: ## Live check: health + every endpoint + migration (stack must be up)
+validate: ## Live check: health, auth, upsert, correlation id, activities (stack must be up)
 	@set -uo pipefail
 	pass=0; fail=0
 	check() { if [ "$$2" = "$$3" ]; then echo "  PASS  $$1 ($$3)"; pass=$$((pass+1)); \
 	          else echo "  FAIL  $$1 (expected $$2, got $$3)"; fail=$$((fail+1)); fi; }
+	K='$(BACKEND_API_KEY)'
 	code() { curl -s -o /dev/null -w "%{http_code}" "$$@"; }
+	acode() { curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $$K" "$$@"; }
 	echo "==> Backend at $(API)"
-	$(PSQL) -c "TRUNCATE leads;" >/dev/null 2>&1 || { echo "  cannot reach database — is the stack up? (make up)"; exit 1; }
-	check "health 200"    200 "$$(code $(API)/health)"
-	check "create 201"    201 "$$(code -X POST $(API)/api/leads -H 'Content-Type: application/json' -d @samples/valid-lead.json)"
-	check "duplicate 409" 409 "$$(code -X POST $(API)/api/leads -H 'Content-Type: application/json' -d @samples/valid-lead.json)"
-	check "invalid 400"   400 "$$(code -X POST $(API)/api/leads -H 'Content-Type: application/json' -d @samples/invalid-lead.json)"
-	check "bad uuid 400"  400 "$$(code $(API)/api/leads/not-a-uuid)"
-	check "notfound 404"  404 "$$(code $(API)/api/leads/00000000-0000-0000-0000-000000000000)"
-	check "by-email 200"  200 "$$(code $(API)/api/leads/by-email/MARIA@example.com)"
-	check "list 200"      200 "$$(code '$(API)/api/leads?page=1&limit=20')"
-	echo "==> TypeORM migration applied:"
-	$(PSQL) -tAc "SELECT name FROM migrations;" | sed 's/^/  /'
+	$(PSQL) -c "TRUNCATE lead_activities, leads CASCADE;" >/dev/null 2>&1 || { echo "  cannot reach database — is the stack up? (make up)"; exit 1; }
+	check "health public 200"  200 "$$(code $(API)/health)"
+	check "upsert no key 401"  401 "$$(code -X POST $(API)/api/v1/leads/upsert -H 'Content-Type: application/json' -d @samples/valid-lead.json)"
+	check "upsert create 201"  201 "$$(acode -X POST $(API)/api/v1/leads/upsert -H 'Content-Type: application/json' -d @samples/valid-lead.json)"
+	check "upsert update 200"  200 "$$(acode -X POST $(API)/api/v1/leads/upsert -H 'Content-Type: application/json' -d @samples/update-lead.json)"
+	check "invalid 400"        400 "$$(acode -X POST $(API)/api/v1/leads/upsert -H 'Content-Type: application/json' -d @samples/invalid-lead.json)"
+	cid=$$(curl -s -D - -o /dev/null -H "X-API-Key: $$K" -H "X-Correlation-Id: mk-cid-123" -X POST $(API)/api/v1/leads/upsert -H 'Content-Type: application/json' -d @samples/valid-lead.json | tr -d '\r' | awk 'tolower($$1)=="x-correlation-id:"{print $$2}')
+	check "correlation echo"   mk-cid-123 "$$cid"
+	lid=$$(curl -s -H "X-API-Key: $$K" $(API)/api/v1/leads/by-email/maria@example.com | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).data.id")
+	check "activity 201"       201 "$$(acode -X POST $(API)/api/v1/leads/$$lid/activities -H 'Content-Type: application/json' -d '{"type":"AUTOMATION_PROCESSED","description":"validate","metadata":{}}')"
+	check "activity 404"       404 "$$(acode -X POST $(API)/api/v1/leads/00000000-0000-0000-0000-000000000000/activities -H 'Content-Type: application/json' -d '{"type":"AUTOMATION_PROCESSED","description":"x"}')"
+	echo "==> TypeORM migrations applied:"
+	$(PSQL) -tAc "SELECT name FROM migrations ORDER BY id;" | sed 's/^/  /'
 	echo
 	echo "Result: $$pass passed, $$fail failed"
 	[ "$$fail" -eq 0 ]
