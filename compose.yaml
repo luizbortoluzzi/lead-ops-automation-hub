@@ -32,7 +32,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      NODE_ENV: production
+      # Local dev stack. Set NODE_ENV=production to disable failure simulation.
+      NODE_ENV: ${NODE_ENV:-development}
       BACKEND_PORT: 3000
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
@@ -44,6 +45,10 @@ services:
       SMTP_PORT: 1025
       SMTP_FROM: ${SMTP_FROM:-leadops@example.local}
       SALES_NOTIFICATION_EMAIL: ${SALES_NOTIFICATION_EMAIL:-sales@example.local}
+      OPERATIONS_NOTIFICATION_EMAIL: ${OPERATIONS_NOTIFICATION_EMAIL:-operations@example.local}
+      ENABLE_FAILURE_SIMULATION: ${ENABLE_FAILURE_SIMULATION:-true}
+      IDEMPOTENCY_RETENTION_DAYS: ${IDEMPOTENCY_RETENTION_DAYS:-7}
+      SIMULATED_TIMEOUT_DELAY_MS: ${SIMULATED_TIMEOUT_DELAY_MS:-6000}
       TZ: ${TZ}
     ports:
       - "${BACKEND_PORT:-3000}:3000"

@@ -26,6 +26,14 @@ export const envSchema = z
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(1025),
     SMTP_FROM: z.string().default('leadops@example.local'),
     SALES_NOTIFICATION_EMAIL: z.string().default('sales@example.local'),
+    OPERATIONS_NOTIFICATION_EMAIL: z.string().default('operations@example.local'),
+
+    // Phase 3 — idempotency & failure simulation.
+    ENABLE_FAILURE_SIMULATION: z.enum(['true', 'false']).default('false'),
+    IDEMPOTENCY_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(7),
+    // How long the "timeout" failure simulation stalls before responding. Set
+    // above n8n's request timeout for realistic manual testing; small in tests.
+    SIMULATED_TIMEOUT_DELAY_MS: z.coerce.number().int().min(0).max(120_000).default(6000),
   })
   .transform((env) => ({
     ...env,
@@ -46,7 +54,11 @@ export interface AppConfig {
     port: number;
     from: string;
     salesEmail: string;
+    operationsEmail: string;
   };
+  failureSimulationEnabled: boolean;
+  idempotencyRetentionDays: number;
+  simulatedTimeoutDelayMs: number;
 }
 
 /** Injection token for the validated {@link AppConfig}. */
@@ -74,6 +86,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       port: data.SMTP_PORT,
       from: data.SMTP_FROM,
       salesEmail: data.SALES_NOTIFICATION_EMAIL,
+      operationsEmail: data.OPERATIONS_NOTIFICATION_EMAIL,
     },
+    // Never active in production, regardless of the flag.
+    failureSimulationEnabled:
+      data.ENABLE_FAILURE_SIMULATION === 'true' && data.NODE_ENV !== 'production',
+    idempotencyRetentionDays: data.IDEMPOTENCY_RETENTION_DAYS,
+    simulatedTimeoutDelayMs: data.SIMULATED_TIMEOUT_DELAY_MS,
   };
 }

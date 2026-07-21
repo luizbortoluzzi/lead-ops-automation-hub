@@ -1,25 +1,82 @@
-import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
+import { CorrelationId } from '../../../common/correlation/correlation-id.decorator';
+import {
+  IdempotencyKeyRequiredError,
+  InvalidIdempotencyKeyError,
+} from '../../../common/errors/app-error';
+import { CanonicalHashService } from '../../../common/hashing/canonical-hash.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { FailureSimulationGuard } from '../../../common/simulation/failure-simulation.guard';
 import { assertUuid } from '../../../common/validation/uuid';
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  validateIdempotencyKey,
+} from '../../idempotency/idempotency.constants';
+import { IdempotencyKeyGuard } from '../../idempotency/idempotency-key.guard';
+import { IdempotencyService } from '../../idempotency/idempotency.service';
 import { ListLeadsQuery, listLeadsQuerySchema } from '../dto/list-leads.dto';
-import { normalizeEmail, UpsertLeadDto, upsertLeadSchema } from '../dto/upsert-lead.dto';
+import {
+  buildCanonicalLead,
+  normalizeEmail,
+  UpsertLeadDto,
+  upsertLeadSchema,
+} from '../dto/upsert-lead.dto';
 import { LeadResponse } from '../types/lead-response';
 import { LeadsService, PaginatedLeads } from '../services/leads.service';
 
 @Controller('api/v1/leads')
 export class LeadsController {
-  constructor(private readonly leads: LeadsService) {}
+  constructor(
+    private readonly leads: LeadsService,
+    private readonly idempotency: IdempotencyService,
+    private readonly hasher: CanonicalHashService,
+  ) {}
 
-  /** Create-or-update a lead. Returns 201 when created, 200 when updated. */
+  /**
+   * Idempotent create-or-update. Requires an `Idempotency-Key` header. Same
+   * key + same payload replays the persisted response (201/200 preserved);
+   * same key + different payload → 409. Score/segment are backend-computed.
+   */
   @Post('upsert')
+  @UseGuards(FailureSimulationGuard, IdempotencyKeyGuard)
   async upsert(
+    @Headers(IDEMPOTENCY_KEY_HEADER) rawKey: string | undefined,
     @Body(new ZodValidationPipe(upsertLeadSchema)) body: UpsertLeadDto,
+    @CorrelationId() correlationId: string | undefined,
     @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<{ data: LeadResponse; meta: { operation: string } }> {
-    const { lead, operation } = await this.leads.upsert(body);
-    void reply.status(operation === 'created' ? 201 : 200);
-    return { data: lead, meta: { operation } };
+  ): Promise<unknown> {
+    const validation = validateIdempotencyKey(rawKey);
+    if (!validation.valid) {
+      throw validation.reason === 'missing'
+        ? new IdempotencyKeyRequiredError()
+        : new InvalidIdempotencyKeyError();
+    }
+
+    const requestHash = this.hasher.hash(buildCanonicalLead(body));
+
+    const outcome = await this.idempotency.execute(
+      {
+        key: validation.value,
+        requestHash,
+        operation: 'LEAD_UPSERT',
+        correlationId: correlationId ?? null,
+      },
+      async () => {
+        const { lead, operation } = await this.leads.upsert(body);
+        return {
+          statusCode: operation === 'created' ? 201 : 200,
+          body: { data: lead, meta: { operation, idempotencyReplayed: false } },
+        };
+      },
+    );
+
+    void reply.status(outcome.statusCode);
+    void reply.header('Idempotency-Replayed', String(outcome.replayed));
+    if (outcome.replayed && outcome.originalCorrelationId) {
+      void reply.header('X-Original-Correlation-Id', outcome.originalCorrelationId);
+    }
+    return outcome.body;
   }
 
   @Get()

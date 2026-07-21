@@ -1,0 +1,9 @@
+{
+  "externalId": "landing-page-123",
+  "name": "Maria Silva",
+  "email": "maria@example.com",
+  "phone": "5511999998888",
+  "company": "Acme Ltda",
+  "employees": 85,
+  "source": "landing-page"
+}

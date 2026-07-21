@@ -1,0 +1,174 @@
+{
+  "name": "WF06 — Backend Request With Retry",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf06-trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.request.method }}",
+        "url": "=http://backend:3000{{ $json.request.path }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Correlation-Id", "value": "={{ $json.correlationId }}" },
+            { "name": "Idempotency-Key", "value": "={{ $json.idempotencyKey }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request.body }}",
+        "options": {
+          "timeout": 5000,
+          "response": { "response": { "fullResponse": true, "neverError": true } }
+        }
+      },
+      "id": "wf06-call",
+      "name": "Call Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400],
+      "notes": "Select 'LeadOps Backend API' Header Auth. Timeout = N8N_BACKEND_REQUEST_TIMEOUT_MS."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF06 Classify Result — see docs/phase-3-n8n-guide.md\nconst res = $json;\nconst status = res.statusCode ?? 0;\nconst errorCode = res.body?.error?.code ?? null;\nconst retryAfter = Number(res.headers?.['retry-after']);\nconst attempt = $json.attempt ?? 1;\nconst RETRY = new Set([408, 425, 429, 500, 502, 503, 504]);\nlet ok = false, retryable = false;\nif (status === 200 || status === 201) ok = true;\nelse if (status === 409 && errorCode === 'IDEMPOTENCY_IN_PROGRESS') retryable = true;\nelse if (status === 409) retryable = false;\nelse if (RETRY.has(status) || status === 0) retryable = true;\nreturn { json: { ...$json, statusCode: status, errorCode, ok, retryable, attempt, retryAfter: Number.isFinite(retryAfter) ? retryAfter : null, body: res.body } };"
+      },
+      "id": "wf06-classify",
+      "name": "Classify Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            { "id": "ok", "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf06-if-success",
+      "name": "Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "s1", "name": "success", "value": true, "type": "boolean" },
+            { "id": "s2", "name": "statusCode", "value": "={{ $json.statusCode }}", "type": "number" },
+            { "id": "s3", "name": "operation", "value": "={{ $json.statusCode === 201 ? 'created' : 'updated' }}", "type": "string" },
+            { "id": "s4", "name": "lead", "value": "={{ $json.body.data }}", "type": "object" },
+            { "id": "s5", "name": "correlationId", "value": "={{ $json.correlationId }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf06-return-success",
+      "name": "Return Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            { "id": "r1", "leftValue": "={{ $json.retryable && $json.attempt < 4 }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf06-if-retry",
+      "name": "Retryable AND attempt < 4?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1140, 500]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.retryAfter ? Math.min($json.retryAfter, 30) : ({1:2,2:5,3:15}[$json.attempt] ?? 15) }}",
+        "unit": "seconds"
+      },
+      "id": "wf06-wait",
+      "name": "Backoff",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1360, 560],
+      "webhookId": "wf06-backoff"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [{ "id": "a1", "name": "attempt", "value": "={{ $json.attempt + 1 }}", "type": "number" }]
+        },
+        "options": {}
+      },
+      "id": "wf06-inc",
+      "name": "Increment Attempt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1560, 560],
+      "notes": "Loops back into 'Call Backend' — max 4 attempts, no infinite loop."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "f1", "name": "success", "value": false, "type": "boolean" },
+            { "id": "f2", "name": "statusCode", "value": "={{ $json.statusCode }}", "type": "number" },
+            { "id": "f3", "name": "errorCode", "value": "={{ $json.errorCode }}", "type": "string" },
+            { "id": "f4", "name": "attempt", "value": "={{ $json.attempt }}", "type": "number" },
+            { "id": "f5", "name": "correlationId", "value": "={{ $json.correlationId }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf06-return-failure",
+      "name": "Return Failure",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1360, 440]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": { "main": [[{ "node": "Call Backend", "type": "main", "index": 0 }]] },
+    "Call Backend": { "main": [[{ "node": "Classify Result", "type": "main", "index": 0 }]] },
+    "Classify Result": { "main": [[{ "node": "Success?", "type": "main", "index": 0 }]] },
+    "Success?": {
+      "main": [
+        [{ "node": "Return Success", "type": "main", "index": 0 }],
+        [{ "node": "Retryable AND attempt < 4?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Retryable AND attempt < 4?": {
+      "main": [
+        [{ "node": "Backoff", "type": "main", "index": 0 }],
+        [{ "node": "Return Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "Backoff": { "main": [[{ "node": "Increment Attempt", "type": "main", "index": 0 }]] },
+    "Increment Attempt": { "main": [[{ "node": "Call Backend", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

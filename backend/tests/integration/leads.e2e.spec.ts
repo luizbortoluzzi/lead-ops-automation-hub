@@ -34,6 +34,8 @@ describeIfDb('LeadOps API v2 (e2e)', () => {
     process.env.DATABASE_URL = databaseUrl;
     process.env.BACKEND_PORT = process.env.BACKEND_PORT ?? '3000';
     process.env.BACKEND_API_KEY = API_KEY;
+    process.env.ENABLE_FAILURE_SIMULATION = 'true';
+    process.env.SIMULATED_TIMEOUT_DELAY_MS = '200';
 
     const { createApp } = await import('../../src/app');
     app = await createApp();
@@ -46,14 +48,19 @@ describeIfDb('LeadOps API v2 (e2e)', () => {
   });
 
   beforeEach(async () => {
-    await dataSource.query('TRUNCATE lead_activities, leads CASCADE');
+    await dataSource.query(
+      'TRUNCATE processed_requests, automation_failures, lead_activities, leads CASCADE',
+    );
   });
 
+  // Each call gets a unique Idempotency-Key by default so it reaches the upsert
+  // (idempotency behavior is covered in idempotency.e2e.spec.ts).
+  let keySeq = 0;
   const upsert = (payload: unknown, headers: Record<string, string> = {}) =>
     app.inject({
       method: 'POST',
       url: '/api/v1/leads/upsert',
-      headers: { ...auth, ...headers },
+      headers: { 'idempotency-key': `auto-${++keySeq}`, ...auth, ...headers },
       payload: payload as object,
     });
 
@@ -204,7 +211,7 @@ describeIfDb('LeadOps API v2 (e2e)', () => {
     expect(body.data.metadata).toEqual({ workflow: 'WF01' });
   });
 
-  it('lists a lead\'s activities (newest first)', async () => {
+  it("lists a lead's activities (newest first)", async () => {
     const created = await upsert(validLead);
     const leadId = created.json().data.id;
     for (const type of ['AUTOMATION_PROCESSED', 'ENTERPRISE_NOTIFICATION_SENT']) {

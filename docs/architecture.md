@@ -165,9 +165,51 @@ One envelope for every error:
 | `DATABASE_ERROR`         | 500  | Unexpected database failure                    |
 | `INTERNAL_ERROR`         | 500  | Any other unhandled error                      |
 
-## Phase 2 limitations
+## Phase 3 — Resilience (idempotency, retry, failure handling)
 
-Not implemented (later phases): idempotency keys, automatic retry, backoff, a
-global n8n error workflow / dead-letter queue, CSV import, scheduled sync, daily
-reports, and AI enrichment. The segment Switch notifies only `enterprise`; the
-notification is best-effort (no retry). The API key is a single shared secret.
+Phase 3 makes the pipeline **idempotent, resilient, observable and
+reprocessable**. New error codes: `IDEMPOTENCY_KEY_REQUIRED`,
+`INVALID_IDEMPOTENCY_KEY`, `IDEMPOTENCY_CONFLICT` (409),
+`IDEMPOTENCY_IN_PROGRESS` (409), plus simulated `RATE_LIMITED` (429),
+`SERVICE_UNAVAILABLE` (503), `GATEWAY_TIMEOUT` (504).
+
+### Idempotency (backend-owned)
+
+- `POST /api/v1/leads/upsert` requires an `Idempotency-Key` header.
+- The backend computes a **canonical SHA-256** of the accepted, normalized fields
+  (order/whitespace/correlation-id/idempotency-key/score/segment independent).
+- Claiming a key is **atomic** (`INSERT … ON CONFLICT DO NOTHING RETURNING`);
+  concurrent identical requests cannot both write. Same key + same payload →
+  replay the persisted response (original status, `Idempotency-Replayed: true`);
+  same key + different payload → `409`. Ledger: `processed_requests`.
+- Full detail: [idempotency.md](idempotency.md).
+
+### Retry & backoff (n8n-owned)
+
+WF06 retries only temporary failures (`408/425/429/500/502/503/504`, network
+timeout, `IDEMPOTENCY_IN_PROGRESS`), never `400/401/403/404/IDEMPOTENCY_CONFLICT`.
+Fixed backoff 2s/5s/15s, **max 4 attempts**, honoring `Retry-After`. Same
+correlation id + idempotency key across attempts. See [retry-policy.md](retry-policy.md).
+
+### Failure handling
+
+WF99 (Error Trigger) classifies, sanitizes and persists definitive failures to
+`automation_failures`, then alerts `operations@example.local` via Mailpit **only**
+on definitive failures. Secondary (notification) failures never revert the
+primary upsert; the response reports `meta.notification.status`. A failed
+enterprise notification is reprocessable via WF07 **without re-running the
+upsert**. See [failure-handling.md](failure-handling.md) and
+[reprocessing.md](reprocessing.md).
+
+### Failure simulation (dev/test only)
+
+`X-Simulate-Error` (`rate-limit`/`server-error`/`service-unavailable`/`timeout`/
+`bad-request`) forces controlled failures to exercise retry. Gated by
+`ENABLE_FAILURE_SIMULATION` and **always inert in production**.
+
+## Phase 3 limitations
+
+Not implemented (later phases): CSV import, batch processing, scheduled sync,
+daily reports, AI, a distributed queue / real dead-letter queue, and horizontal
+scale. Idempotency records are retained (no automatic cleanup yet); backoff is
+fixed (no jitter); reprocessing is manual; the API key is a single shared secret.

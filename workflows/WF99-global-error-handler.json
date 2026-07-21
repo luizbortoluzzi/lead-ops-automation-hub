@@ -1,0 +1,102 @@
+{
+  "name": "WF99 — Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf99-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF99 Extract Error Context — Run Once for Each Item\nconst e = $json;\nconst exec = e.execution ?? {};\nconst wf = e.workflow ?? {};\nconst err = e.execution?.error ?? e.error ?? {};\nreturn { json: {\n  correlationId: err.correlationId ?? e.correlationId ?? null,\n  workflowName: wf.name ?? null,\n  executionId: exec.id ?? null,\n  nodeName: err.node?.name ?? null,\n  operation: e.operation ?? 'OTHER',\n  statusCode: err.httpCode ?? err.statusCode ?? null,\n  errorCode: err.code ?? null,\n  message: (err.message ?? 'Unknown error').toString().slice(0, 500),\n  attempt: e.attempt ?? null,\n  payload: e.payload ?? {},\n} };"
+      },
+      "id": "wf99-extract",
+      "name": "Extract Error Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 400]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// WF99 Classify + Sanitize — Run Once for Each Item\nconst status = $json.statusCode ?? 0;\nconst code = $json.errorCode ?? null;\nfunction classify(status, code) {\n  const map = { 400:['VALIDATION',false],401:['AUTHENTICATION',false],403:['AUTHORIZATION',false],404:['NOT_FOUND',false],408:['TIMEOUT',true],425:['DEPENDENCY_UNAVAILABLE',true],429:['RATE_LIMIT',true],500:['INTERNAL',true],502:['DEPENDENCY_UNAVAILABLE',true],503:['DEPENDENCY_UNAVAILABLE',true],504:['TIMEOUT',true] };\n  if (status === 409) return code === 'IDEMPOTENCY_IN_PROGRESS' ? ['CONFLICT',true] : ['CONFLICT',false];\n  return map[status] ?? ['UNKNOWN', false];\n}\nconst SENSITIVE = ['authorization','x-api-key','apikey','api_key','password','secret','token','cookie','set-cookie'];\nfunction sanitize(v, d = 0) {\n  if (d > 5) return '[TRUNCATED]';\n  if (Array.isArray(v)) return v.slice(0,100).map(x => sanitize(x, d+1));\n  if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = SENSITIVE.includes(k.toLowerCase()) ? '[REDACTED]' : sanitize(v[k], d+1); return o; }\n  if (typeof v === 'string' && v.length > 2000) return v.slice(0,2000) + '…';\n  return v;\n}\nconst [errorType, retryable] = classify(status, code);\nreturn { json: { ...$json, errorType, retryable, payload: sanitize($json.payload) } };"
+      },
+      "id": "wf99-classify",
+      "name": "Classify And Sanitize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:3000/api/v1/automation-failures",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Correlation-Id", "value": "={{ $json.correlationId }}" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { correlationId: $json.correlationId, workflowName: $json.workflowName ?? 'unknown', executionId: $json.executionId, nodeName: $json.nodeName, operation: $json.operation, errorType: $json.errorType, errorCode: $json.errorCode, statusCode: $json.statusCode, retryable: $json.retryable, attempt: $json.attempt ?? 1, message: $json.message, payload: $json.payload } }}",
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "wf99-persist",
+      "name": "Persist Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [860, 400],
+      "notes": "Select 'LeadOps Backend API' Header Auth."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            { "id": "alert", "leftValue": "={{ ['AUTHENTICATION','AUTHORIZATION','INTERNAL','DEPENDENCY_UNAVAILABLE','RATE_LIMIT','TIMEOUT'].includes($json.errorType) }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf99-if-alert",
+      "name": "Should Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1080, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "leadops@example.local",
+        "toEmail": "operations@example.local",
+        "subject": "=[LeadOps] Automation failure: {{ $json.workflowName }} ({{ $json.errorType }})",
+        "emailFormat": "text",
+        "text": "=Workflow: {{ $json.workflowName }}\nNode: {{ $json.nodeName }}\nOperation: {{ $json.operation }}\nError: {{ $json.errorType }} / {{ $json.errorCode }} ({{ $json.statusCode }})\nAttempt: {{ $json.attempt }}\nCorrelation ID: {{ $json.correlationId }}\nMessage: {{ $json.message }}",
+        "options": {}
+      },
+      "id": "wf99-email",
+      "name": "Send Email (Mailpit)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1300, 320],
+      "notes": "Select 'Mailpit SMTP' credential. Alert only on definitive failures."
+    }
+  ],
+  "connections": {
+    "Error Trigger": { "main": [[{ "node": "Extract Error Context", "type": "main", "index": 0 }]] },
+    "Extract Error Context": { "main": [[{ "node": "Classify And Sanitize", "type": "main", "index": 0 }]] },
+    "Classify And Sanitize": { "main": [[{ "node": "Persist Failure", "type": "main", "index": 0 }]] },
+    "Persist Failure": { "main": [[{ "node": "Should Alert?", "type": "main", "index": 0 }]] },
+    "Should Alert?": { "main": [[{ "node": "Send Email (Mailpit)", "type": "main", "index": 0 }], []] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}

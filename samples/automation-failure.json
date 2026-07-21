@@ -1,0 +1,16 @@
+{
+  "correlationId": "f667f28d-e592-465f-aa7c-07d46218d245",
+  "workflowName": "WF01 — Lead Intake",
+  "executionId": "1234",
+  "nodeName": "Backend Lead Upsert",
+  "operation": "LEAD_UPSERT",
+  "errorType": "RATE_LIMIT",
+  "errorCode": "BACKEND_RATE_LIMIT",
+  "statusCode": 429,
+  "retryable": true,
+  "attempt": 4,
+  "message": "Backend rate limit exceeded",
+  "payload": {
+    "source": "landing-page"
+  }
+}

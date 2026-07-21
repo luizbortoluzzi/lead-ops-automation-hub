@@ -26,3 +26,22 @@ export const upsertLeadSchema = z.object({
 });
 
 export type UpsertLeadDto = z.infer<typeof upsertLeadSchema>;
+
+/**
+ * Builds the canonical object used for the idempotency request hash: only the
+ * accepted, normalized fields — never score/segment (backend-computed), nor the
+ * idempotency key or correlation id. `undefined` fields are omitted so the hash
+ * is stable. Key order does not matter (the hasher sorts keys).
+ */
+export function buildCanonicalLead(dto: UpsertLeadDto): Record<string, unknown> {
+  const canonical: Record<string, unknown> = {
+    name: dto.name,
+    email: dto.email,
+    employees: dto.employees,
+  };
+  if (dto.externalId !== undefined) canonical.externalId = dto.externalId;
+  if (dto.phone !== undefined) canonical.phone = dto.phone;
+  if (dto.company !== undefined) canonical.company = dto.company;
+  if (dto.source !== undefined) canonical.source = dto.source;
+  return canonical;
+}
