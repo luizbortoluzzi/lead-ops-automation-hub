@@ -81,6 +81,24 @@ Full detail: [docs/architecture.md](docs/architecture.md).
 
 - Docker + Docker Compose v2 (for the full stack).
 - Node.js ≥ 20 and npm (only if you want to run the API/tests outside Docker).
+- GNU Make (optional, but the shortcuts below assume it).
+
+## Quick start (Makefile)
+
+A `Makefile` is the single entry point — run `make` to list every target.
+
+```bash
+make demo        # create .env, build + start the stack, wait healthy, validate end-to-end
+make up          # build + start everything (detached)
+make validate    # live check: health + all endpoints + migration (stack must be up)
+make check       # typecheck + lint + unit tests (CI-like gate)
+make test-int    # unit + integration tests against the running Postgres
+make logs        # tail all logs
+make clean       # stop and wipe volumes
+```
+
+`make` reads host ports/credentials from your `.env`, so `make validate` targets
+the right port automatically. The sections below show the underlying commands.
 
 ## Configure `.env`
 
