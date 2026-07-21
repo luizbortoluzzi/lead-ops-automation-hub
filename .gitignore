@@ -1,0 +1,22 @@
+# Environment
+.env
+*.local
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Docker / n8n local data (persisted via named volumes, but ignore any stray local dirs)
+/data/
